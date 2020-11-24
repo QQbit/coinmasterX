@@ -5,6 +5,8 @@ import android.util.Log;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import com.dev.coinmasterx.model.GrahpError;
+import com.dev.coinmasterx.model.Test_Users;
 import com.squareup.okhttp.Call;
 import com.squareup.okhttp.Callback;
 import com.squareup.okhttp.MediaType;
@@ -138,7 +140,25 @@ public class coinmaster_api {
 
     private void update_fb_data(String userId, String sessionToken){
         Request request = updateFBData(userId,sessionToken);
-        okHttpClient.newCall(request).enqueue(callback_LoginGame());
+        if(request == null)
+            return;
+        okHttpClient.newCall(request).enqueue(callback_update_fb_data());
+    }
+
+    private Callback callback_update_fb_data(){
+        return new Callback() {
+            @Override
+            public void onFailure(Request request, IOException e) {
+                Log.e(TAG, "onFailure: "+ e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Response response) throws IOException {
+                if(response.isSuccessful()){
+                    Log.d(TAG, "callback_update_fb_data: "+ response.body().string());
+                }
+            }
+        };
     }
     //TODO: Use Retrofit for this
     private Request registerDeviceID(JSONObject json) {
@@ -179,12 +199,32 @@ public class coinmaster_api {
     }
 
     private Request updateFBData(String userId, String sessionToken) {
+        fb_api grahpAPI = new fb_api();
+        Test_Users testUsers = null;
+        try {
+          String tokenTest = grahpAPI.generateTokenTest();
+          if(tokenTest.contains("error")){
+              GrahpError grahpError = grahpAPI.grahpErrorModel(tokenTest);
+              Log.e(TAG, "fbGraph: "+ grahpError.getMessage());
+              if(grahpError.getCode() == 2900){
+                  //in progress try again
+                  requestNewFBApp();
+              }
+              return null;
+          }
+          testUsers = grahpAPI.TestUsersModel(tokenTest);
+        } catch (IOException | JSONException e) {
+            e.printStackTrace();
+        }
+        if(testUsers == null)
+            return null;
 
-        String block_login = "Device[udid]="+deviceId+"&API_KEY=viki&API_SECRET=coin&Device[change]=20201008_4&fbToken=&locale=th&User[fb_token]="+token+"&p=fb&Client[version]=3.5.170_fband";
+
+        String updateFB_Profile = "Device[udid]="+deviceId+"&API_KEY=viki&API_SECRET=coin&Device[change]=20201008_4&fbToken=&locale=th&User[fb_token]="+testUsers.getAccess_token()+"&p=fb&Client[version]=3.5.170_fband";
 
 
         RequestBody requestBody =
-                RequestBody.create(MediaType.parse("application/x-www-form-urlencoded"), block_login);
+                RequestBody.create(MediaType.parse("application/x-www-form-urlencoded"), updateFB_Profile);
 
         return new Request.Builder()
                 .addHeader("Content-Type", "application/x-www-form-urlencoded")
@@ -193,6 +233,10 @@ public class coinmaster_api {
                 .url("https://vik-game.moonactive.net/api/v1/users/"+userId+"/update_fb_data")
                 .post(requestBody)
                 .build();
+    }
+
+    private boolean requestNewFBApp(){
+        return true;
     }
 
 }
