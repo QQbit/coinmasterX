@@ -1,6 +1,7 @@
 package com.dev.coinmasterx;
 
 import android.content.Context;
+import android.os.AsyncTask;
 import android.util.Log;
 import android.widget.EditText;
 import android.widget.Toast;
@@ -20,15 +21,19 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.concurrent.ThreadPoolExecutor;
 
 
 public class coinmaster_api {
     private OkHttpClient okHttpClient;
     private String TAG = "coinmaster-API:";
     private String deviceId = "";
+    private String deviceToken = "";
     private String token = "";
+    private String inviteURL = "";
 
-    public coinmaster_api(String inviteURL, int count) {
+    public coinmaster_api(String inviteURL) {
+      this.inviteURL = inviteURL;
       okHttpClient = new OkHttpClient();
         Request request = null;
         try {
@@ -36,6 +41,7 @@ public class coinmaster_api {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+
         okHttpClient.newCall(request).enqueue(callback_registerDeviceID());
     }
 
@@ -93,7 +99,8 @@ public class coinmaster_api {
                 if(response.isSuccessful()){
                     try {
                         JSONObject jsonObject = new JSONObject(response.body().string());
-                        String deviceToken = jsonObject.getString("deviceToken");
+                        Log.d(TAG, "callback_registerGame : " + jsonObject.toString());
+                        deviceToken = jsonObject.getString("deviceToken");
                         loginGame(deviceToken); //login Game
                     } catch (JSONException e) {
                         e.printStackTrace();
@@ -105,11 +112,178 @@ public class coinmaster_api {
             }
         };
     }
+    private void FBloginGame(String deviceToken, String fbToken){
+        Log.d(TAG, "FBloginGame deviceToken : " + deviceToken);
+        Log.d(TAG, "FBloginGame fbToken : " + fbToken);
+        Request request = FBlogin(deviceToken,fbToken);
+        okHttpClient.newCall(request).enqueue(callback_FBLoginGame(fbToken));
+    }
 
     private void loginGame(String deviceToken){
+        Log.d(TAG, "LoginGame : " + deviceToken);
         Request request = login(deviceToken);
         okHttpClient.newCall(request).enqueue(callback_LoginGame());
     }
+
+    private Callback callback_FBLoginGame(final String fbToken){
+        return new Callback() {
+            @Override
+            public void onFailure(Request request, IOException e) {
+                Log.e(TAG, "onFailure: "+ e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Response response) throws IOException {
+                if(response.isSuccessful()){
+                    JSONObject jsonObject = null;
+                    try {
+                        jsonObject = new JSONObject(response.body().string());
+                        Log.d(TAG, "callback_FBLoginGame: "+ jsonObject.toString());
+                        String userId = jsonObject.getString("userId");
+                        String sessionToken = jsonObject.getString("sessionToken");
+
+                        JSONObject data = new JSONObject();
+                        data.put("Device",deviceId);
+                        data.put("fbToken",fbToken);
+                        data.put("userId",userId);
+                        data.put("sessionToken",sessionToken);
+                        Invite(inviteURL, data);
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        };
+    }
+
+    private void Invite(String inviteURL, JSONObject data){
+        Request request = new Request.Builder()
+                .url(inviteURL)
+                .get()
+                .build();
+
+        try {
+          Response getUser = okHttpClient.newCall(request).execute();
+          String response = getUser.body().string();
+         // Log.d(TAG, "Invite GetUser: "+ response);
+          String[] shared_link = response.split("&amp;c=");
+          shared_link = shared_link[1].split("&amp;");
+          String User =  shared_link[0];
+          Log.d(TAG, "Invite GetUser: "+ User);
+
+          Request requestInvite = AcceptInvite(data, User);
+          okHttpClient.newCall(requestInvite).enqueue(AcceptInvite(data));
+
+        } catch (IOException | JSONException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private Callback AcceptInvite(final JSONObject data){
+        return new Callback() {
+            @Override
+            public void onFailure(Request request, IOException e) {
+                Log.e(TAG, "onFailure: "+ e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Response response) throws IOException {
+                if(response.isSuccessful()){
+                    String raw = response.body().string();
+                    Log.d(TAG, "AcceptInvite: "+ raw);
+                    if(raw.contains("name")){
+                        spinMaster(data);
+                    }else{
+                        Log.e(TAG, "User not found: "+ raw);
+                        try {
+                            Log.e(TAG, "UserId: "+ data.getString("userId"));
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+                        Log.e(TAG, "Token Fails!");
+                        return;
+                    }
+                }
+
+            }
+        };
+    }
+
+    private void spinMaster(JSONObject data){
+        try {
+            int count = 1;
+            while (true) {
+                Request request = spinMasterRequest(data, count++);
+                Response response = okHttpClient.newCall(request).execute();
+                JSONObject roundSpin = new JSONObject(response.body().string());
+                int spins = roundSpin.getInt("spins");
+                Log.d(TAG, "Spin: " + spins);
+                if(spins >= 50){
+                    Request requestUpgrade = spinUpgradeRequest(data);
+                    Response upgrade = okHttpClient.newCall(requestUpgrade).execute();
+                    Log.d(TAG, "upgrade: " + upgrade.body().string());
+                    break;
+                }
+            }
+            return;
+
+        } catch (JSONException | IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private Request spinUpgradeRequest(JSONObject data) throws JSONException {
+
+        String upgrade = "Device[udid]="+data.getString("Device")+"&API_KEY=viki&API_SECRET=coin&Device[change]=20201008_4&fbToken="+data.getString("fbToken")+"&locale=th&item=House&state=0&include[0]=pets";
+
+
+        RequestBody requestBody =
+                RequestBody.create(MediaType.parse("application/x-www-form-urlencoded"), upgrade);
+
+        return new Request.Builder()
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .addHeader("Authorization","Bearer " + data.getString("sessionToken"))
+                .addHeader("X-CLIENT-VERSION","3.5.170")
+                .url("https://vik-game.moonactive.net/api/v1/users/"+data.getString("userId")+"/upgrade")
+                .post(requestBody)
+                .build();
+    }
+
+    private Request spinMasterRequest(JSONObject data, int count) throws JSONException {
+
+        String spin = "Device[udid]="+data.getString("Device")+"&API_KEY=viki&API_SECRET=coin&Device[change]=20201008_4&fbToken="+data.getString("fbToken")+"&locale=th&seq="+count+"&auto_spin=False&bet=1&Client[version]=3.5.170_fband";
+
+
+        RequestBody requestBody =
+                RequestBody.create(MediaType.parse("application/x-www-form-urlencoded"), spin);
+
+        return new Request.Builder()
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .addHeader("Authorization","Bearer " + data.getString("sessionToken"))
+                .addHeader("X-CLIENT-VERSION","3.5.170")
+                .url("https://vik-game.moonactive.net/api/v1/users/"+data.getString("userId")+"/spin")
+                .post(requestBody)
+                .build();
+    }
+
+    private Request AcceptInvite(JSONObject data, String User) throws JSONException {
+
+        String block_login = "Device[udid]="+data.getString("Device")+"&API_KEY=viki&API_SECRET=coin&Device[change]=20201008_4&fbToken="+data.getString("fbToken")+"&locale=th&inviter="+User;
+
+
+        RequestBody requestBody =
+                RequestBody.create(MediaType.parse("application/x-www-form-urlencoded"), block_login);
+
+            return new Request.Builder()
+                    .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                    .addHeader("Authorization","Bearer " + data.getString("sessionToken"))
+                    .addHeader("X-CLIENT-VERSION","3.5.170")
+                    .url("https://vik-game.moonactive.net/api/v1/users/"+data.getString("userId")+"/accept_invitation")
+                    .post(requestBody)
+                    .build();
+    }
+
 
     private Callback callback_LoginGame(){
         return new Callback() {
@@ -125,6 +299,7 @@ public class coinmaster_api {
                     JSONObject jsonObject = null;
                     try {
                         jsonObject = new JSONObject(response.body().string());
+                        Log.d(TAG, "callback_LoginGame: "+ jsonObject.toString());
                         String userId = jsonObject.getString("userId");
                         String sessionToken = jsonObject.getString("sessionToken");
                         update_fb_data(userId, sessionToken); //update fb data
@@ -133,10 +308,14 @@ public class coinmaster_api {
                         e.printStackTrace();
                     }
 
+                }else {
+                    Log.d(TAG, "callback_LoginGame fail: " + response.body().string());
                 }
             }
         };
     }
+
+
 
     private void update_fb_data(String userId, String sessionToken){
         Request request = updateFBData(userId,sessionToken);
@@ -155,7 +334,17 @@ public class coinmaster_api {
             @Override
             public void onResponse(Response response) throws IOException {
                 if(response.isSuccessful()){
-                    Log.d(TAG, "callback_update_fb_data: "+ response.body().string());
+                    try {
+                        JSONObject jsonObject = new JSONObject(response.body().string());
+                        Log.d(TAG, "callback_update_fb_data: "+ jsonObject.toString());
+                        String fbToken = jsonObject.getString("fbToken");
+                        FBloginGame(deviceToken,fbToken); //login Game
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    } catch (Exception e){
+                        e.printStackTrace();
+                    }
+
                 }
             }
         };
@@ -177,6 +366,23 @@ public class coinmaster_api {
 
         return new Request.Builder()
                 .url("https://vik-game.moonactive.net/api/v1/authentication/register")
+                .post(requestBody)
+                .build();
+    }
+
+    private Request FBlogin(String DeviceToken, String fbToken) {
+
+        String block_login = "Device[udid]="+deviceId+"&API_KEY=viki&API_SECRET=coin&Device[change]=20201008_4&fbToken="+fbToken+"&locale=th&Device[os]=Android&Client[version]=3.5_fband&Device[version]=5.1.1&seq=1";
+
+
+        RequestBody requestBody =
+                RequestBody.create(MediaType.parse("application/x-www-form-urlencoded"), block_login);
+
+        return new Request.Builder()
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .addHeader("Authorization","Bearer " + DeviceToken)
+                .addHeader("X-CLIENT-VERSION","3.5.170")
+                .url("https://vik-game.moonactive.net/api/v1/users/login")
                 .post(requestBody)
                 .build();
     }
