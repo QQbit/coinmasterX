@@ -11,6 +11,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import com.google.android.material.snackbar.Snackbar;
+
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -51,7 +53,7 @@ public class MainActivity extends AppCompatActivity {
 
         final EditText inviteURL = (EditText) findViewById(R.id.invite_link);
         final EditText count = (EditText) findViewById(R.id.Input_count);
-        inviteURL.setText("https://GetCoinMaster.com/~pYDV2"); //fix inviteLink
+        inviteURL.setText("https://GetCoinMaster.com/~r0MZh"); //fix inviteLink
         Button Go_spin = (Button) findViewById(R.id.spin_pump);
 
         Go_spin.setOnClickListener(new View.OnClickListener() {
@@ -65,7 +67,7 @@ public class MainActivity extends AppCompatActivity {
                         Toast.makeText(getApplicationContext(),e.getMessage(),Toast.LENGTH_SHORT).show();
                     }
                 if(link.isEmpty() && inviteCount == 0){
-                    Toast.makeText(getApplicationContext(),"link or count is Empty",Toast.LENGTH_SHORT).show();
+                    Snackbar.make(getWindow().getDecorView().getRootView(), "link or count is Empty", Snackbar.LENGTH_SHORT).show();
                     return;
                 }
 
@@ -84,7 +86,7 @@ public class MainActivity extends AppCompatActivity {
                                 dialog.dismiss();
                             }
                         })
-                        .setIcon(android.R.drawable.ic_dialog_alert)
+                        .setIcon(android.R.drawable.ic_dialog_dialer)
                         .show();
 
             }
