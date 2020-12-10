@@ -1,2 +1,3 @@
+include ':spinmaster'
 include ':app'
 rootProject.name = "coinmasterX"
